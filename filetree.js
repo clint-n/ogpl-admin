@@ -50,7 +50,7 @@ import path from "path";
 
 
 // ✅ EDIT THIS LIST TO IGNORE FILES/FOLDERS
-const EXCLUDE_LIST = ["node_modules", ".git", ".DS_Store", "dist", ".VSCodeCounter", "mega-test", "api.http", "deploy.ps1", "Docs.txt", "fileTree.js", "reset-and-run.ps1", "rough"];
+const EXCLUDE_LIST = ["node_modules", "temp", "staging", ".next", ".git", ".DS_Store", "dist", ".VSCodeCounter", "mega-test", "api.http", "deploy.ps1", "Docs.txt", "fileTree.js", "reset-and-run.ps1", "rough"];
 
 // ✅ Change tree depth (Infinity = no limit)
 const MAX_DEPTH = Infinity;
