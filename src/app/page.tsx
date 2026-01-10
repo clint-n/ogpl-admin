@@ -85,27 +85,79 @@ function SidebarItem({ label, active, onClick }: { label: string, active: boolea
 function AddNewView() {
   const [file, setFile] = useState<File | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [result, setResult] = useState<any>(null);
+  const [publishing, setPublishing] = useState(false);
+  
+  // RAW RESULT (For validation status/warnings)
+  const [analysisResult, setAnalysisResult] = useState<any>(null);
+  
+  // EDITABLE FORM DATA (What we actually send to the server)
+  const [formData, setFormData] = useState({
+    slug: '',
+    name: '',
+    version: '',
+    author: '',
+    authorUrl: '',
+    type: 'plugin' // default
+  });
 
   const onDrop = async (acceptedFiles: File[]) => {
     const uploadedFile = acceptedFiles[0];
     setFile(uploadedFile);
     setAnalyzing(true);
-    setResult(null);
+    setAnalysisResult(null);
 
-    // CALL THE API
-    const formData = new FormData();
-    formData.append('file', uploadedFile);
+    const formPayload = new FormData();
+    formPayload.append('file', uploadedFile);
 
     try {
-      const res = await fetch('/api/analyze', { method: 'POST', body: formData });
+      const res = await fetch('/api/analyze', { method: 'POST', body: formPayload });
       const data = await res.json();
-      setResult(data);
+      
+      setAnalysisResult(data);
+
+      // PRE-FILL FORM with analyzed data
+      if (data.isValid) {
+        setFormData({
+          slug: data.slug || '',
+          name: data.name || '',
+          version: data.version || '',
+          author: data.author || '',
+          authorUrl: data.authorUrl || '',
+          type: data.type || 'plugin'
+        });
+      }
     } catch (e) {
       console.error(e);
       alert("Error analyzing file");
     } finally {
       setAnalyzing(false);
+    }
+  };
+
+  const onPublish = async () => {
+    if (!analysisResult) return;
+    setPublishing(true);
+
+    try {
+      // Send the EDITED formData, not the raw analysis result
+      const res = await fetch('/api/publish', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(formData)
+      });
+
+      const data = await res.json();
+      if (data.success) {
+        alert("✅ Published Successfully!");
+        setAnalysisResult(null);
+        setFile(null);
+      } else {
+        alert("❌ Error: " + data.error);
+      }
+    } catch (e) {
+      alert("Publish Failed");
+    } finally {
+      setPublishing(false);
     }
   };
 
@@ -115,96 +167,159 @@ function AddNewView() {
     maxFiles: 1
   });
 
-  return (
-    <div className="space-y-6">
-      
-      {/* 1. DROP ZONE */}
+  // --- RENDER ---
+
+  // 1. INITIAL STATE (No File)
+  if (!file && !analysisResult) {
+    return (
       <div 
         {...getRootProps()} 
-        className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
+        className={`border-2 border-dashed rounded-xl p-20 text-center cursor-pointer transition-colors ${
           isDragActive ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
         }`}
       >
         <input {...getInputProps()} />
         <div className="flex flex-col items-center gap-4">
           <div className="bg-gray-100 p-4 rounded-full">
-            <UploadCloud className="w-8 h-8 text-gray-500" />
+            <UploadCloud className="w-10 h-10 text-gray-500" />
           </div>
           <div>
-            <p className="font-semibold text-lg">Click to upload or drag and drop</p>
-            <p className="text-gray-500 text-sm">ZIP files only (Plugin or Theme)</p>
+            <p className="font-semibold text-xl">Click to upload or drag and drop</p>
+            <p className="text-gray-500 mt-2">ZIP files only (Plugin or Theme)</p>
           </div>
         </div>
       </div>
+    );
+  }
 
-      {/* 2. LOADING STATE */}
-      {analyzing && (
-        <div className="flex items-center gap-3 text-blue-600 bg-blue-50 p-4 rounded-lg animate-pulse">
-          <Loader2 className="w-5 h-5 animate-spin" />
-          <span className="font-medium">Unzipping and analyzing structure...</span>
+  // 2. LOADING
+  if (analyzing) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 text-blue-600 bg-blue-50 rounded-xl">
+        <Loader2 className="w-10 h-10 animate-spin mb-4" />
+        <span className="font-medium text-lg">Unzipping and analyzing structure...</span>
+      </div>
+    );
+  }
+
+  // 3. REVIEW & EDIT FORM
+  return (
+    <div className="space-y-6">
+      
+      {/* STATUS HEADER */}
+      <div className={`p-4 rounded-lg flex justify-between items-center ${analysisResult.isValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'}`}>
+        <div className="flex items-center gap-3">
+          {analysisResult.isValid ? <CheckCircle className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+          <div>
+            <p className="font-bold">{analysisResult.isValid ? 'Valid Structure Detected' : 'Invalid Structure'}</p>
+            <p className="text-sm opacity-80">{file?.name} (Score: {analysisResult.score}/10)</p>
+          </div>
+        </div>
+        <button onClick={() => { setFile(null); setAnalysisResult(null); }} className="text-sm underline hover:text-black">
+          Cancel / Re-upload
+        </button>
+      </div>
+
+      {/* DUPLICATE WARNING */}
+      {analysisResult.dbStatus?.productExists && (
+        <div className="bg-yellow-50 border border-yellow-200 p-4 rounded-lg flex gap-3">
+          <AlertCircle className="text-yellow-600 w-5 h-5 flex-shrink-0" />
+          <div>
+            <h4 className="font-bold text-yellow-800">Product already exists</h4>
+            <p className="text-sm text-yellow-700 mt-1">
+              We found <strong>{analysisResult.slug}</strong> in the database.
+              {analysisResult.dbStatus.versionExists 
+                ? <span className="block font-bold mt-1 text-red-600">This exact version is already uploaded!</span> 
+                : <span> You are about to add a new version.</span>
+              }
+            </p>
+          </div>
         </div>
       )}
 
-      {/* 3. RESULTS CARD */}
-      {result && (
-        <div className={`border rounded-xl overflow-hidden ${result.isValid ? 'border-green-200' : 'border-red-200'}`}>
-          {/* Header */}
-          <div className={`p-4 border-b flex justify-between items-center ${result.isValid ? 'bg-green-50' : 'bg-red-50'}`}>
-            <div className="flex items-center gap-2">
-              {result.isValid ? <CheckCircle className="text-green-600 w-5 h-5" /> : <AlertCircle className="text-red-600 w-5 h-5" />}
-              <span className={`font-bold ${result.isValid ? 'text-green-800' : 'text-red-800'}`}>
-                {result.isValid ? 'Valid Structure' : 'Invalid Structure'}
-              </span>
-            </div>
-            <span className="text-sm font-mono text-gray-500">Score: {result.score}/10</span>
+      {/* EDITABLE FORM */}
+      <div className="bg-white border rounded-xl p-6 shadow-sm">
+        <h3 className="text-lg font-bold mb-6 text-gray-800 border-b pb-2">Review & Edit Details</h3>
+        
+        <div className="grid grid-cols-2 gap-6">
+          <div className="col-span-1">
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Product Name</label>
+            <input 
+              type="text" 
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+              value={formData.name}
+              onChange={(e) => setFormData({...formData, name: e.target.value})}
+            />
           </div>
 
-          {/* Details Body */}
-          <div className="p-6 grid grid-cols-2 gap-6 bg-white">
-            <div>
-              <label className="text-xs uppercase tracking-wider text-gray-500 font-bold">Detected Name</label>
-              <p className="text-lg font-medium text-gray-900">{result.name || 'Unknown'}</p>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider text-gray-500 font-bold">Version</label>
-              <p className="text-lg font-medium text-gray-900">{result.version || 'Unknown'}</p>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider text-gray-500 font-bold">Slug (Folder Name)</label>
-              <p className="font-mono text-blue-600 bg-blue-50 inline-block px-2 py-1 rounded mt-1">
-                {result.slug || 'N/A'}
-              </p>
-            </div>
-            <div>
-              <label className="text-xs uppercase tracking-wider text-gray-500 font-bold">Type</label>
-              <p className="capitalize">{result.type || 'Unknown'}</p>
+          <div className="col-span-1">
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Version</label>
+            <input 
+              type="text" 
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none font-medium"
+              value={formData.version}
+              onChange={(e) => setFormData({...formData, version: e.target.value})}
+            />
+          </div>
+
+          <div className="col-span-1">
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Slug (URL Path)</label>
+            <div className="flex items-center">
+              <span className="bg-gray-100 text-gray-500 border border-r-0 rounded-l p-2 text-sm">/</span>
+              <input 
+                type="text" 
+                className="w-full border p-2 rounded-r focus:ring-2 focus:ring-blue-500 outline-none font-mono text-sm text-blue-600"
+                value={formData.slug}
+                onChange={(e) => setFormData({...formData, slug: e.target.value})}
+              />
             </div>
           </div>
 
-          {/* DUPLICATE WARNINGS (The Logic You Requested) */}
-          {result.dbStatus?.productExists && (
-            <div className="bg-yellow-50 border-t border-yellow-200 p-4 flex items-start gap-3">
-              <AlertCircle className="text-yellow-600 w-5 h-5 mt-0.5" />
-              <div>
-                <h4 className="font-bold text-yellow-800">Duplicate Product Detected</h4>
-                <p className="text-sm text-yellow-700 mt-1">
-                  The slug <strong>{result.slug}</strong> already exists in the database.
-                </p>
-                {result.dbStatus.versionExists ? (
-                   <p className="text-sm font-bold text-red-600 mt-2">
-                     CRITICAL: Version {result.version} is ALSO already uploaded.
-                   </p>
-                ) : (
-                   <button className="mt-3 bg-yellow-100 hover:bg-yellow-200 text-yellow-800 px-4 py-2 rounded-lg text-sm font-semibold transition-colors">
-                     Switch to "Update Mode"
-                   </button>
-                )}
-              </div>
-            </div>
-          )}
-
+          <div className="col-span-1">
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Author</label>
+            <input 
+              type="text" 
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none"
+              value={formData.author}
+              onChange={(e) => setFormData({...formData, author: e.target.value})}
+            />
+          </div>
+          
+           <div className="col-span-2">
+            <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Author URL</label>
+            <input 
+              type="text" 
+              className="w-full border p-2 rounded focus:ring-2 focus:ring-blue-500 outline-none text-gray-600"
+              value={formData.authorUrl}
+              onChange={(e) => setFormData({...formData, authorUrl: e.target.value})}
+            />
+          </div>
         </div>
-      )}
+
+        {/* ACTIONS */}
+        <div className="mt-8 flex justify-end gap-3 border-t pt-4">
+          <button 
+            onClick={() => { setFile(null); setAnalysisResult(null); }}
+            className="px-6 py-2 text-gray-600 font-medium hover:bg-gray-100 rounded-lg transition-colors"
+          >
+            Cancel
+          </button>
+          
+          <button 
+            onClick={onPublish}
+            disabled={publishing || !analysisResult.isValid || analysisResult.dbStatus?.versionExists}
+            className={`px-8 py-2 rounded-lg font-bold flex items-center gap-2 text-white transition-all
+              ${(analysisResult.isValid && !analysisResult.dbStatus?.versionExists) 
+                ? 'bg-blue-600 hover:bg-blue-700 shadow-lg hover:shadow-xl translate-y-0 hover:-translate-y-0.5' 
+                : 'bg-gray-400 cursor-not-allowed'
+              }`}
+          >
+            {publishing ? <Loader2 className="animate-spin w-5 h-5" /> : <UploadCloud className="w-5 h-5" />}
+            {publishing ? 'Publishing...' : 'Publish Item'}
+          </button>
+        </div>
+
+      </div>
     </div>
   );
 }
