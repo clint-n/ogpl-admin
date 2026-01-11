@@ -1,0 +1,39 @@
+// prisma/schema.prisma
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Item {
+  id            String   @id @default(uuid())
+  originalName  String   // e.g. "elementor-pro.zip"
+  slug          String?  // e.g. "elementor-pro"
+  type          String?  // "plugin" or "theme"
+  version       String?
+  
+  // Status Tracking
+  status        String   @default("pending") // pending, analyzing, review, building, uploaded, error
+  score         Int      @default(0)
+  
+  // File Paths (Local)
+  zipPath       String   // Path to original zip
+  extractPath   String?  // Path to temp folder
+  
+  // JSON Blobs for flexible data
+  metadata      String?  // Stores extracted headers (Author, URI, etc.)
+  analysisLogs  String?  // Stores the analyzer output for history
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model Settings {
+  id            String @id @default("config")
+  r2Config      String? // Encrypted JSON string for R2 keys
+  uploadPath    String? // Default local folder to watch
+}
