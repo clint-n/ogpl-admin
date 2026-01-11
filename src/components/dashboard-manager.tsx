@@ -4,7 +4,11 @@ import { useState, useEffect, useCallback } from 'react';
 import UploadZone from './upload-zone';
 import ReviewItemForm from './forms/review-item-form';
 
-export default function DashboardManager() {
+interface Props {
+  mode?: 'create' | 'update'; // Default to 'create'
+}
+
+export default function DashboardManager({ mode = 'create' }: Props) {
   const [view, setView] = useState<'upload' | 'review'>('upload');
   const [currentItemId, setCurrentItemId] = useState<string | null>(null);
   const [itemData, setItemData] = useState<any>(null);
@@ -93,7 +97,7 @@ export default function DashboardManager() {
         )}
       </div>
 
-      {view === 'upload' && <UploadZone onUploadComplete={handleUploadComplete} />}
+      {view === 'upload' && <UploadZone onUploadComplete={handleUploadComplete} mode={mode} />}
 
       {view === 'review' && (
         loading && !itemData ? (

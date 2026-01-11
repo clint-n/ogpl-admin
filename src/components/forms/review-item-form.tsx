@@ -15,6 +15,8 @@ interface ItemData {
   score: number;
   reason: string;
   status: string;
+  isNewer?: boolean;
+  remoteVersion?: string;
 }
 
 interface Props {
@@ -33,7 +35,8 @@ export default function ReviewItemForm({ data, onRefresh }: Props) {
     version: data.version || '',
     author: data.author || '',         // <--- New
     authorUrl: data.authorUrl || '',   // <--- New
-    type: data.type || 'plugin'
+    type: data.type || 'plugin',
+    isNewer: data.isNewer ?? true, // Default to true if unknown
   });
 
   // Keep form data in sync if parent updates it (e.g. after a poll)
@@ -60,50 +63,48 @@ export default function ReviewItemForm({ data, onRefresh }: Props) {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  async function handleAction(action: 'build' | 'save' | 'upload_r2') {
+  // 1. DETERMINE STATE (Make sure this block is correct)
+  // 'pending' = Analyzing
+  // 'processing_upload' = Worker is uploading to R2
+  const isBuilt = data.status === 'built' || data.status === 'media_ready' || data.status === 'ready_to_upload';
+  const isPending = data.status === 'pending';
+  const isProcessing = data.status === 'pending' || data.status === 'processing_upload';
+  const isPublished = data.status === 'published';
+
+  // Update the function signature to accept the 4 specific action types
+  async function handleAction(actionType: 'build' | 'save' | 'upload' | 'force_upload') {
     setLoading(true);
     try {
-      if (action === 'upload_r2') {
-        alert("R2 Upload Coming Next!"); 
-        setLoading(false);
-        return;
+      const payload: any = { ...formData };
+
+      if (actionType === 'build') payload.forceBuild = true;
+      if (actionType === 'upload') payload.action = 'upload';
+      if (actionType === 'force_upload') {
+        payload.action = 'upload';
+        payload.forceUpload = true;
       }
 
       const res = await fetch(`/api/item/${data.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...formData,
-          forceBuild: action === 'build'
-        }),
+        body: JSON.stringify(payload),
       });
 
       const result = await res.json();
       if (!res.ok) throw new Error(result.error);
 
-      // Whether we 'build' or 'save', we simply need to refresh the data.
-      // We check if onRefresh exists first to avoid the crash.
-      if (onRefresh) {
-        onRefresh();       // Fast: Use the Dashboard's local refresher
-      } else {
-        router.refresh();  // Slow: Use Next.js to reload the page (fallback)
-      }
-
-      // --- REPLACEMENT BLOCK END ---
+      // Refresh Data immediately to get the new Status (e.g., 'processing_upload')
+      if (onRefresh) onRefresh();
+      else router.refresh();
 
     } catch (e: any) {
       alert(`Error: ${e.message}`);
     } finally {
-      // If building, keep loading true to prevent double-clicks until the refresh happens
-      if (action !== 'build') {
-        setLoading(false);
-      }
+      // ✅ FIX: Always stop the local loading state.
+      // The UI will now rely on 'isProcessing' (data.status) to lock the buttons.
+      setLoading(false);
     }
   }
-
-  // Determine State
-  const isBuilt = data.status === 'built' || data.status === 'media_ready' || data.status === 'ready_to_upload';
-  const isPending = data.status === 'pending';
 
   return (
     <div className="bg-gray-900 border border-gray-800 rounded-lg p-8 max-w-4xl mx-auto shadow-xl">
@@ -159,6 +160,34 @@ export default function ReviewItemForm({ data, onRefresh }: Props) {
           />
         </div>
 
+        {/* VERSION COMPARISON CARD (Only shows if remoteVersion exists) */}
+        {data.remoteVersion && (
+          <div className={`col-span-2 mb-6 p-4 rounded-lg border ${
+            data.isNewer ? 'bg-green-900/20 border-green-800' : 'bg-orange-900/20 border-orange-800'
+          }`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className={`font-bold ${data.isNewer ? 'text-green-400' : 'text-orange-400'}`}>
+                  {data.isNewer ? '🚀 Update Available' : '⚠️ Downgrade / Re-upload'}
+                </h3>
+                <p className="text-sm text-gray-400 mt-1">
+                  Live Version: <span className="text-white font-mono">{data.remoteVersion}</span> 
+                  {' '} vs {' '}
+                  Uploaded: <span className="text-white font-mono">{data.version}</span>
+                </p>
+              </div>
+              
+              {!data.isNewer && (
+                <div className="text-xs text-right text-orange-300">
+                  Source & Images will be skipped.<br/>
+                  Use "Force Upload" to override.
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        
         {/* Version */}
         <div>
           <label className="block text-xs font-medium text-gray-500 uppercase mb-2">Version</label>
@@ -212,38 +241,75 @@ export default function ReviewItemForm({ data, onRefresh }: Props) {
       {/* ACTIONS */}
       <div className="mt-10 flex gap-4 border-t border-gray-800 pt-6">
         
-        {isBuilt ? (
-          <button 
-            onClick={() => handleAction('upload_r2')}
-            className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-bold py-4 rounded-lg transition-all shadow-lg shadow-purple-900/20 flex items-center justify-center gap-2"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" /></svg>
-            Upload to Cloud
-          </button>
+        {isPublished ? (
+           <div className="flex-1 bg-green-900/30 border border-green-800 text-green-400 font-bold py-4 rounded-lg flex items-center justify-center gap-2">
+              <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+              Published Successfully
+           </div>
+        ) : isBuilt ? (
+          <div className="flex-1 flex gap-2">
+            
+            {/* PUBLISH BUTTON */}
+            <button 
+              onClick={() => handleAction('upload')}
+              // Disable if network loading OR if Worker is processing
+              disabled={loading || isProcessing}
+              className={`flex-1 font-bold py-4 rounded-lg transition-all shadow-lg flex items-center justify-center gap-2
+                ${isProcessing || loading
+                  ? 'bg-purple-900/50 text-purple-200 cursor-wait' 
+                  : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-900/20'}
+              `}
+            >
+              {isProcessing ? (
+                // Show this if data.status is 'processing_upload'
+                <>
+                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                  Publishing...
+                </>
+              ) : (
+                // Show this normally
+                <>
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" /></svg>
+                  Publish to Cloud
+                </>
+              )}
+            </button>
+
+            {/* FORCE BUTTON */}
+            <button 
+              onClick={() => {
+                if(confirm('Are you sure? This will overwrite ALL files on R2.')) handleAction('force_upload');
+              }}
+              disabled={loading || isProcessing}
+              title="Force Re-upload All Files"
+              className="px-4 bg-gray-800 hover:bg-red-900/50 hover:text-red-400 border border-gray-700 rounded-lg transition-colors flex items-center justify-center disabled:opacity-50"
+            >
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+            </button>
+          </div>
         ) : (
+          /* BUILD BUTTON */
           <button 
             onClick={() => handleAction('build')}
-            disabled={loading || !canBuild}
+            disabled={loading || !canBuild || isProcessing}
             className={`flex-1 font-bold py-4 rounded-lg transition-all shadow-lg flex items-center justify-center gap-2
-              ${canBuild 
+              ${canBuild && !isProcessing
                 ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-blue-900/20' 
                 : 'bg-gray-800 text-gray-500 cursor-not-allowed'}
-              ${loading ? 'opacity-70 cursor-wait' : ''}
             `}
           >
-            {loading ? 'Working...' : '🛠️ Manual Build & Process'}
+            {isProcessing ? 'Working...' : (loading ? 'Starting...' : '🛠️ Manual Build & Process')}
           </button>
         )}
 
         <button 
           onClick={() => handleAction('save')}
-          disabled={loading}
+          disabled={loading || isProcessing}
           className="px-8 py-4 bg-gray-800 hover:bg-gray-700 text-gray-300 font-medium rounded-lg transition-colors"
         >
           Save Data
         </button>
       </div>
-
     </div>
   );
 }

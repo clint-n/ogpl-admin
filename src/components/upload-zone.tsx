@@ -7,7 +7,12 @@ interface UploadZoneProps {
   onUploadComplete: (id: string) => void;
 }
 
-export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
+interface UploadZoneProps {
+  onUploadComplete: (id: string) => void;
+  mode?: 'create' | 'update'; // <--- New Prop
+}
+
+export default function UploadZone({ onUploadComplete, mode = 'create' }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -24,6 +29,7 @@ export default function UploadZone({ onUploadComplete }: UploadZoneProps) {
     setUploading(true);
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('mode', mode);
 
     try {
       const res = await fetch('/api/upload', {

@@ -10,7 +10,7 @@ const getIO = () => (global as any).io;
 
 interface TaskPayload {
   jobId: string;
-  action: 'analyze' | 'build';
+  action: 'analyze' | 'build' | 'upload';
   payload: any;
 }
 

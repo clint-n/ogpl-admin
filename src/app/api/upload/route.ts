@@ -13,6 +13,7 @@ export async function POST(req: Request) {
   try {
     const formData = await req.formData();
     const file = formData.get('file') as File;
+    const mode = formData.get('mode') as string || 'create';
 
     if (!file) {
       return NextResponse.json({ error: 'No file uploaded' }, { status: 400 });
@@ -45,7 +46,8 @@ export async function POST(req: Request) {
         zipPath: savePath, // We point to the new saved file
         extractPath: extractDir,
         status: 'pending',
-        score: 0
+        score: 0,
+        metadata: JSON.stringify({ mode })
       }
     });
 
@@ -56,7 +58,8 @@ export async function POST(req: Request) {
       payload: {
         zipPath: savePath,
         tempDir: extractDir,
-        id: item.id
+        id: item.id,
+        checkRemote: mode === 'update'
       }
     });
 
