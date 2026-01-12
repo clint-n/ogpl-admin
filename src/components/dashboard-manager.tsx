@@ -24,9 +24,9 @@ export default function DashboardManager({ mode = 'create' }: Props) {
 
     try {
       const res = await fetch(`/api/item/${currentItemId}`);
-      const data = await res.json();
-      
-      const metadata = data.metadata ? JSON.parse(data.metadata) : {};
+    const data = await res.json();
+    
+    const metadata = data.metadata ? JSON.parse(data.metadata) : {};
       
       const formProps = {
         id: data.id,
@@ -39,7 +39,9 @@ export default function DashboardManager({ mode = 'create' }: Props) {
         type: (data.type || metadata.type || 'plugin') as 'plugin' | 'theme',
         score: data.score,
         reason: data.analysisLogs || '',
-        status: data.status
+        status: data.status,
+        isNewer: metadata.isNewer ?? true, 
+        remoteVersion: metadata.remoteVersion || null
       };
 
       setItemData(formProps);
