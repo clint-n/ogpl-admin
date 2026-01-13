@@ -13,20 +13,27 @@ import mime from 'mime-types';
 import pLimit from 'p-limit';
 import axios from 'axios';
 
-function cleanVersion(v: string | null): string {
-  if (!v) return '0.0.0';
-  // Remove 'v' prefix if present
-  let clean = v.replace(/^v/i, '').trim();
-  // Count dots to see if we have x.y or x
-  const parts = clean.split('.');
+
+function compareVersions(v1: string | null, v2: string | null): number {
+  if (!v1) v1 = '0';
+  if (!v2) v2 = '0';
+
+  // Remove 'v' prefix and split by dot
+  const a = v1.replace(/^v/i, '').split('.');
+  const b = v2.replace(/^v/i, '').split('.');
   
-  // Pad with .0 until we have at least 3 parts
-  while (parts.length < 3) {
-    parts.push('0');
+  const len = Math.max(a.length, b.length);
+  
+  for (let i = 0; i < len; i++) {
+    // Parse to integer, default to 0 if missing (e.g. 2.28 vs 2.28.1)
+    const valA = parseInt(a[i] || '0', 10);
+    const valB = parseInt(b[i] || '0', 10);
+    
+    if (valA > valB) return 1;  // v1 is newer
+    if (valA < valB) return -1; // v2 is newer
   }
   
-  // Return clean string (e.g. "2.28" -> "2.28.0")
-  return parts.join('.');
+  return 0; // Equal
 }
 
 const prisma = new PrismaClient();
@@ -264,10 +271,10 @@ async function runTask(task: any) {
          if (check) {
             if (check.productExists && check.product.latestVersion) {
 
-              const uploadedVer = cleanVersion(result.info.version);
-              const remoteVer = cleanVersion(check.product.latestVersion);
-               // If uploaded version <= remote version, it's NOT newer
-               if (semver.lte(uploadedVer, remoteVer)) {
+              const comparison = compareVersions(result.info.version, check.product.latestVersion);
+               
+               // If comparison is 0 (Equal) or -1 (Older), then it is NOT newer
+               if (comparison <= 0) {
                   isNewer = false;
                   log(jobId, `⚠️ Version is Older/Same (${result.info.version} <= ${check.product.latestVersion}). Optimizing build.`);
                } else {
